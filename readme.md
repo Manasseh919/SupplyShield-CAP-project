@@ -17,4 +17,4 @@ SupplyShield is a CAP-based side-by-side extension for material-shortage detecti
 
 ## Local start command
 ```bash
-npm start
+cds watch
