@@ -1,10 +1,12 @@
 const cds = require('@sap/cds');
 const { RiskCalculator } = require('./lib/risk-calculator');
+const { SubstituteEngine } = require('./lib/substitute-engine');
 const config = require('./lib/risk-config');
 
 module.exports = cds.service.impl(async function() {
   const { Materials, ShortageCases, AffectedOrders, AuditEntries } = this.entities;
   const riskCalculator = new RiskCalculator(config);
+  const substituteEngine = new SubstituteEngine();
 
   this.before('READ', Materials, req => {
     req.query.where({ isActive: true });
@@ -164,5 +166,91 @@ module.exports = cds.service.impl(async function() {
 
       return tx.run(SELECT.from(ShortageCases).where({ ID: caseId }));
     });
+  });
+
+  this.on('findSubstituteCandidates', async req => {
+    const { caseID } = req.data;
+
+    if (!caseID) {
+      req.error(400, 'caseID is required');
+    }
+
+    const shortageCase = await SELECT.from(ShortageCases).where({ ID: caseID });
+    if (!shortageCase.length) {
+      req.error(404, 'Invalid shortage case');
+    }
+
+    const materialID = shortageCase[0].material_ID;
+    const substitutes = await SELECT.from('MaterialSubstitutes').where({ material_ID: materialID });
+
+    const candidates = substitutes.map(item => {
+      const scoreResult = substituteEngine.scoreCandidate({
+        compatibility: 85,
+        availability: 90,
+        priceDifference: 15,
+        supplierReliability: 80,
+        leadTimeDays: 7,
+        quantityCapable: 100,
+        requiredQuantity: Number(shortageCase[0].shortageQuantity || 0)
+      });
+
+      return {
+        materialSubstituteID: item.substituteMaterial_ID,
+        materialNumber: item.substituteMaterial_ID,
+        description: 'Substitute candidate',
+        score: scoreResult.score,
+        explanation: scoreResult.explanation
+      };
+    });
+
+    return candidates.sort((a, b) => b.score - a.score);
+  });
+
+  this.on('simulateResolution', async req => {
+    const { caseID, materialSubstituteID, proposedQuantity } = req.data;
+
+    if (!caseID || !materialSubstituteID || proposedQuantity == null) {
+      req.error(400, 'caseID, materialSubstituteID, and proposedQuantity are required');
+    }
+
+    const shortageCase = await SELECT.from(ShortageCases).where({ ID: caseID });
+    if (!shortageCase.length) {
+      req.error(404, 'Invalid shortage case');
+    }
+
+    const requestedQty = Number(proposedQuantity || 0);
+    const availableQty = 100;
+    const protectedDemand = Math.min(requestedQty, 20);
+    const remainingShortage = Math.max(0, Number(shortageCase[0].shortageQuantity || 0) - requestedQty);
+
+    const currentSolutionCost = Number(shortageCase[0].estimatedFinancialImpact || 0);
+    const substituteSolutionCost = currentSolutionCost + (requestedQty * 25);
+    const additionalCost = substituteSolutionCost - currentSolutionCost;
+    const priceIncreasePercentage = currentSolutionCost > 0
+      ? (additionalCost / currentSolutionCost) * 100
+      : 0;
+
+    const warnings = [];
+    if (requestedQty > availableQty) {
+      warnings.push('Requested quantity exceeds available substitute quantity');
+    }
+    if (remainingShortage > 0) {
+      warnings.push('Remaining shortage remains after substitution');
+    }
+
+    return {
+      requestedSubstituteQuantity: requestedQty,
+      availableSubstituteQuantity: availableQty,
+      protectedDemand,
+      remainingShortage,
+      currentSolutionCost,
+      substituteSolutionCost,
+      additionalCost,
+      priceIncreasePercentage,
+      estimatedDelay: 7,
+      requiredApprovalTypes: 'engineering,quality',
+      feasibilityStatus: warnings.length ? 'warning' : 'feasible',
+      warnings: warnings.join('; ')
+    };
   });
 });

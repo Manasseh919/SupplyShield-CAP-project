@@ -135,4 +135,36 @@ service SupplyShieldService @(path: '/odata/v4/supply-shield') {
     plantID : UUID,
     storageLocationID : UUID
   ) returns ShortageCases;
+
+
+  type SubstituteCandidate {
+  materialSubstituteID : UUID;
+  materialNumber : String;
+  description : String;
+  score : Integer;
+  explanation : String;
+}
+
+type SimulationResult {
+  requestedSubstituteQuantity : Decimal(13,3);
+  availableSubstituteQuantity : Decimal(13,3);
+  protectedDemand : Decimal(13,3);
+  remainingShortage : Decimal(13,3);
+  currentSolutionCost : Decimal(13,2);
+  substituteSolutionCost : Decimal(13,2);
+  additionalCost : Decimal(13,2);
+  priceIncreasePercentage : Decimal(5,2);
+  estimatedDelay : Integer;
+  requiredApprovalTypes : String;
+  feasibilityStatus : String;
+  warnings : String;
+}
+
+function findSubstituteCandidates(caseID : UUID) returns many SubstituteCandidate;
+
+action simulateResolution(
+  caseID : UUID,
+  materialSubstituteID : UUID,
+  proposedQuantity : Decimal
+) returns SimulationResult;
 }
