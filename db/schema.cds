@@ -1,7 +1,17 @@
 namespace com.supplyshield;
 
 using { cuid, managed } from '@sap/cds/common';
-using { com.supplyshield.MaterialCriticality as MaterialCriticality } from './types';
+using {
+  com.supplyshield.MaterialCriticality as MaterialCriticality,
+  com.supplyshield.ShortageRiskLevel as ShortageRiskLevel,
+  com.supplyshield.ShortageCaseStatus as ShortageCaseStatus,
+  com.supplyshield.RootCause as RootCause,
+  com.supplyshield.SubstituteApprovalStatus as SubstituteApprovalStatus,
+  com.supplyshield.ProposalStatus as ProposalStatus,
+  com.supplyshield.ApprovalType as ApprovalType,
+  com.supplyshield.ApprovalStatus as ApprovalStatus,
+  com.supplyshield.CustomerPriority as CustomerPriority
+} from './types';
 
 @assert.unique: { uniquePlantCode: [plantCode] }
 entity Plants : cuid, managed {
@@ -93,4 +103,85 @@ entity MaterialSubstitutes : cuid, managed {
   approvalStatus     : String(30) default 'pending';
   effectiveFrom      : Date;
   effectiveTo        : Date;
+}
+
+@assert.unique: { uniqueCaseNumber: [caseNumber] }
+entity ShortageCases : cuid, managed {
+  caseNumber                 : String(30) @mandatory;
+  material                   : Association to Materials;
+  plant                      : Association to Plants;
+  storageLocation            : Association to StorageLocations;
+  status                     : ShortageCaseStatus default 'detected';
+  riskLevel                  : ShortageRiskLevel default 'medium';
+  shortageQuantity           : Decimal(13,3) @assert.range: [0, 999999999999.999];
+  projectedAvailableQuantity : Decimal(13,3) @assert.range: [0, 999999999999.999];
+  expectedShortageDate       : Date;
+  requiredResolutionDate     : Date;
+  estimatedFinancialImpact   : Decimal(13,2) @assert.range: [0, 999999999999.99];
+  currencyCode               : String(3) @mandatory;
+  rootCause                  : RootCause;
+  assignedTo                 : String(100);
+  detectedAt                 : Timestamp;
+  resolvedAt                 : Timestamp;
+
+  affectedOrders             : Composition of many AffectedOrders
+                                 on affectedOrders.shortageCase = $self;
+  proposals                  : Composition of many ResolutionProposals
+                                 on proposals.shortageCase = $self;
+  comments                   : Composition of many CaseComments
+                                 on comments.shortageCase = $self;
+  auditEntries               : Composition of many AuditEntries
+                                 on auditEntries.shortageCase = $self;
+}
+
+entity AffectedOrders : cuid, managed {
+  shortageCase      : Association to ShortageCases;
+  orderNumber       : String(30) @mandatory;
+  orderType         : String(30);
+  customerPriority  : CustomerPriority default 'medium';
+  affectedQuantity  : Decimal(13,3) @assert.range: [0, 999999999999.999];
+  impactDescription : String(500);
+}
+
+entity ResolutionProposals : cuid, managed {
+  shortageCase         : Association to ShortageCases;
+  proposedSubstitute   : Association to Materials;
+  proposedQuantity     : Decimal(13,3) @assert.range: [0, 999999999999.999];
+  expectedUnitPrice    : Decimal(13,2) @assert.range: [0, 999999999999.99];
+  additionalCost       : Decimal(13,2) @assert.range: [0, 999999999999.99];
+  priceIncreasePercent : Decimal(5,2) @assert.range: [0, 100];
+  leadTimeDays         : Integer @assert.range: [0, 365];
+  protectedDemandQty   : Decimal(13,3) @assert.range: [0, 999999999999.999];
+  remainingShortageQty : Decimal(13,3) @assert.range: [0, 999999999999.999];
+  compatibilityScore   : Integer @assert.range: [0, 100];
+  overallScore         : Integer @assert.range: [0, 100];
+  status               : ProposalStatus default 'draft';
+  submittedAt          : Timestamp;
+
+  approvalSteps        : Composition of many ApprovalSteps
+                           on approvalSteps.proposal = $self;
+}
+
+entity ApprovalSteps : cuid, managed {
+  proposal         : Association to ResolutionProposals;
+  approvalType     : ApprovalType;
+  sequence         : Integer @assert.range: [1, 99];
+  assignedApprover : String(100);
+  status           : ApprovalStatus default 'pending';
+  decisionTime     : Timestamp;
+  decisionComment  : String(500);
+}
+
+entity CaseComments : cuid, managed {
+  shortageCase : Association to ShortageCases;
+  author       : String(100);
+  commentText  : String(1000) @mandatory;
+  createdAt    : Timestamp;
+}
+
+entity AuditEntries : cuid, managed {
+  shortageCase     : Association to ShortageCases;
+  eventType        : String(100) @mandatory;
+  eventDescription : String(1000);
+  createdAt        : Timestamp;
 }
