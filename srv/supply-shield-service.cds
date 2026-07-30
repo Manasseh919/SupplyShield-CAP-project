@@ -129,4 +129,10 @@ service SupplyShieldService @(path: '/odata/v4/supply-shield') {
     plantID : UUID,
     storageLocationID : UUID
   ) returns RiskCalculation;
+
+  action generateShortageCase(
+    materialID : UUID,
+    plantID : UUID,
+    storageLocationID : UUID
+  ) returns ShortageCases;
 }
