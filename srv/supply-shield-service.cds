@@ -109,4 +109,24 @@ service SupplyShieldService @(path: '/odata/v4/supply-shield') {
     comments,
     auditEntries
   };
+
+
+  type RiskCalculation {
+    currentAvailableQuantity : Decimal(13,3);
+    projectedAvailableQuantity : Decimal(13,3);
+    requiredDemandQuantity : Decimal(13,3);
+    shortageQuantity : Decimal(13,3);
+    safetyStockDeficit : Decimal(13,3);
+    expectedShortageDate : Date;
+    affectedDemandCount : Integer;
+    riskScore : Integer;
+    riskLevel : String;
+    explanation : String;
+  }
+
+  action calculateMaterialRisk(
+    materialID : UUID,
+    plantID : UUID,
+    storageLocationID : UUID
+  ) returns RiskCalculation;
 }
