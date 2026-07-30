@@ -1,0 +1,17 @@
+GET http://localhost:4004/odata/v4/supply-shield/Materials
+Accept: application/json
+
+###
+
+GET http://localhost:4004/odata/v4/supply-shield/Materials?$select=materialNumber,description,criticality
+Accept: application/json
+
+###
+
+GET http://localhost:4004/odata/v4/supply-shield/Materials?$filter=criticality eq 'critical'
+Accept: application/json
+
+###
+
+GET http://localhost:4004/odata/v4/supply-shield/Materials?$orderby=materialNumber asc&$top=5
+Accept: application/json

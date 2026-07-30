@@ -1,0 +1,17 @@
+GET http://localhost:4004/odata/v4/supply-shield/ShortageCases
+Accept: application/json
+
+###
+
+GET http://localhost:4004/odata/v4/supply-shield/ShortageCases?$select=caseNumber,status,riskLevel
+Accept: application/json
+
+###
+
+GET http://localhost:4004/odata/v4/supply-shield/ShortageCases?$filter=status eq 'awaiting_approval'
+Accept: application/json
+
+###
+
+GET http://localhost:4004/odata/v4/supply-shield/ShortageCases?$expand=material,plant,affectedOrders&$top=2
+Accept: application/json
