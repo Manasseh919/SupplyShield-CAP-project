@@ -16,7 +16,18 @@ module.exports = cds.service.impl(async function() {
   const riskCalculator = new RiskCalculator(config);
   const substituteEngine = new SubstituteEngine();
 
-  // --- QUERY HOOKS ---
+  const transitionMap = {
+    detected: ['underAnalysis'],
+    underAnalysis: ['solutionProposed'],
+    solutionProposed: ['approvalInProgress'],
+    approvalInProgress: ['approved', 'rejected'],
+    approved: ['procurementInProgress'],
+    procurementInProgress: ['resolved'],
+    resolved: ['reopened'],
+    rejected: ['reopened'],
+    reopened: ['underAnalysis']
+  };
+
   this.before('READ', Materials, req => {
     req.query.where({ isActive: true });
   });
@@ -25,7 +36,12 @@ module.exports = cds.service.impl(async function() {
     req.query.orderBy({ caseNumber: 'asc' });
   });
 
-  // --- RISK ASSESSMENT & SHORTAGE CREATION ---
+  this.before('UPDATE', ShortageCases, req => {
+    if (req.data.status) {
+      req.error(400, 'Direct status updates are not allowed. Use the lifecycle actions instead.');
+    }
+  });
+
   this.on('calculateMaterialRisk', async req => {
     const { materialID, plantID, storageLocationID } = req.data;
 
@@ -178,7 +194,6 @@ module.exports = cds.service.impl(async function() {
     });
   });
 
-  // --- SUBSTITUTION & SIMULATION ---
   this.on('findSubstituteCandidates', async req => {
     const { caseID } = req.data;
 
@@ -265,7 +280,6 @@ module.exports = cds.service.impl(async function() {
     };
   });
 
-  // --- PROPOSALS & APPROVAL WORKFLOW ---
   this.on('createResolutionProposal', async req => {
     const { caseID, materialSubstituteID, proposedQuantity, comment } = req.data;
 
@@ -307,11 +321,11 @@ module.exports = cds.service.impl(async function() {
       await tx.run(INSERT.into(AuditEntries).entries({
         shortageCase_ID: caseID,
         eventType: 'proposal_created',
-        eventDescription: 'Resolution proposal created',
+        eventDescription: comment || 'Resolution proposal created',
         createdAt: new Date().toISOString()
       }));
 
-      return tx.run(SELECT.from(ResolutionProposals).where({ ID: proposal.ID || proposal[0]?.ID }));
+      return tx.run(SELECT.from(ResolutionProposals).where({ ID: proposal.ID }));
     });
   });
 
@@ -356,8 +370,14 @@ module.exports = cds.service.impl(async function() {
         }));
       }
 
-      await tx.run(UPDATE(ResolutionProposals).set({ status: 'submitted', submittedAt: new Date().toISOString() }).where({ ID: proposalID }));
-      await tx.run(UPDATE(ShortageCases).set({ status: 'awaiting_approval' }).where({ ID: currentProposal.shortageCase_ID }));
+      await tx.run(UPDATE(ResolutionProposals).set({
+        status: 'submitted',
+        submittedAt: new Date().toISOString()
+      }).where({ ID: proposalID }));
+
+      await tx.run(UPDATE(ShortageCases).set({
+        status: 'awaiting_approval'
+      }).where({ ID: currentProposal.shortageCase_ID }));
 
       await tx.run(INSERT.into(AuditEntries).entries({
         shortageCase_ID: currentProposal.shortageCase_ID,
@@ -398,10 +418,8 @@ module.exports = cds.service.impl(async function() {
         decisionComment: comment
       }).where({ ID: approvalStepID }));
 
-      const parentProposal = await tx.run(SELECT.from(ResolutionProposals).where({ ID: currentStep.proposal_ID }));
-
       await tx.run(INSERT.into(AuditEntries).entries({
-        shortageCase_ID: parentProposal[0]?.shortageCase_ID,
+        shortageCase_ID: (await tx.run(SELECT.from(ResolutionProposals).where({ ID: currentStep.proposal_ID })))[0].shortageCase_ID,
         eventType: 'approval_step_approved',
         eventDescription: `Approval step approved: ${currentStep.approvalType}`,
         createdAt: new Date().toISOString()
@@ -443,16 +461,129 @@ module.exports = cds.service.impl(async function() {
       if (proposal.length) {
         await tx.run(UPDATE(ResolutionProposals).set({ status: 'rejected' }).where({ ID: currentStep.proposal_ID }));
         await tx.run(UPDATE(ShortageCases).set({ status: 'rejected' }).where({ ID: proposal[0].shortageCase_ID }));
-
-        await tx.run(INSERT.into(AuditEntries).entries({
-          shortageCase_ID: proposal[0].shortageCase_ID,
-          eventType: 'proposal_rejected',
-          eventDescription: 'Resolution proposal rejected',
-          createdAt: new Date().toISOString()
-        }));
       }
 
+      await tx.run(INSERT.into(AuditEntries).entries({
+        shortageCase_ID: proposal[0].shortageCase_ID,
+        eventType: 'proposal_rejected',
+        eventDescription: 'Resolution proposal rejected',
+        createdAt: new Date().toISOString()
+      }));
+
       return tx.run(SELECT.from(ApprovalSteps).where({ ID: approvalStepID }));
+    });
+  });
+
+  this.on('assignCase', async req => {
+    const { caseID, assignee } = req.data;
+
+    if (!caseID || !assignee || !String(assignee).trim()) {
+      req.error(400, 'caseID and assignee are required');
+    }
+
+    return cds.tx(async tx => {
+      const caseRow = await tx.run(SELECT.from(ShortageCases).where({ ID: caseID }));
+      if (!caseRow.length) {
+        req.error(404, 'Invalid shortage case');
+      }
+
+      await tx.run(UPDATE(ShortageCases).set({ assignedTo: assignee }).where({ ID: caseID }));
+
+      await tx.run(INSERT.into(AuditEntries).entries({
+        shortageCase_ID: caseID,
+        eventType: 'case_assigned',
+        eventDescription: `Case assigned to ${assignee}`,
+        createdAt: new Date().toISOString()
+      }));
+
+      return tx.run(SELECT.from(ShortageCases).where({ ID: caseID }));
+    });
+  });
+
+  this.on('resolveCase', async req => {
+    const { caseID, resolutionComment } = req.data;
+
+    if (!caseID) {
+      req.error(400, 'caseID is required');
+    }
+
+    if (!resolutionComment || !String(resolutionComment).trim()) {
+      req.error(400, 'resolutionComment is required');
+    }
+
+    return cds.tx(async tx => {
+      const caseRow = await tx.run(SELECT.from(ShortageCases).where({ ID: caseID }));
+      if (!caseRow.length) {
+        req.error(404, 'Invalid shortage case');
+      }
+
+      const current = caseRow[0];
+      const allowed = transitionMap[current.status] || [];
+      if (!allowed.includes('resolved')) {
+        req.error(409, `Invalid transition from ${current.status} to resolved`);
+      }
+
+      const approvedProposal = await tx.run(SELECT.from(ResolutionProposals).where({
+        shortageCase_ID: caseID,
+        status: 'approved'
+      }));
+
+      if (!approvedProposal.length) {
+        req.error(409, 'A case cannot be resolved without an approved proposal');
+      }
+
+      await tx.run(UPDATE(ShortageCases).set({
+        status: 'resolved',
+        resolvedAt: new Date().toISOString()
+      }).where({ ID: caseID }));
+
+      await tx.run(INSERT.into(AuditEntries).entries({
+        shortageCase_ID: caseID,
+        eventType: 'case_resolved',
+        eventDescription: resolutionComment,
+        createdAt: new Date().toISOString()
+      }));
+
+      return tx.run(SELECT.from(ShortageCases).where({ ID: caseID }));
+    });
+  });
+
+  this.on('reopenCase', async req => {
+    const { caseID, reason } = req.data;
+
+    if (!caseID) {
+      req.error(400, 'caseID is required');
+    }
+
+    if (!reason || !String(reason).trim()) {
+      req.error(400, 'reason is required');
+    }
+
+    return cds.tx(async tx => {
+      const caseRow = await tx.run(SELECT.from(ShortageCases).where({ ID: caseID }));
+      if (!caseRow.length) {
+        req.error(404, 'Invalid shortage case');
+      }
+
+      const current = caseRow[0];
+      const allowed = transitionMap[current.status] || [];
+      if (!allowed.includes('reopened')) {
+        req.error(409, `Invalid transition from ${current.status} to reopened`);
+      }
+
+      await tx.run(UPDATE(ShortageCases).set({
+        status: 'reopened',
+        resolvedAt: null
+      }).where({ ID: caseID }));
+
+      await tx.run(INSERT.into(AuditEntries).entries({
+        shortageCase_ID: caseID,
+        eventType: 'case_reopened',
+        eventDescription: reason,
+        createdAt: new Date().toISOString()
+      }));
+
+      return tx.run(SELECT.from(ShortageCases).where({ ID: caseID }));
     });
   });
 });
