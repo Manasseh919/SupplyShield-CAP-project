@@ -1,0 +1,6 @@
+ID,storageLocationCode,name,plant_ID,isActive
+aaaaaaaa-aaaa-4a11-8a11-aaaaaaaaaaaa,0001,FG Store,11111111-1111-4a11-8a11-111111111111,true
+bbbbbbbb-bbbb-4b22-8b22-bbbbbbbbbbbb,0002,Raw Material Store,11111111-1111-4a11-8a11-111111111111,true
+cccccccc-cccc-4c33-8c33-cccccccccccc,0003,West FG,22222222-2222-4b22-8b22-222222222222,true
+dddddddd-dddd-4d44-8d44-dddddddddddd,0004,North FG,33333333-3333-4c33-8c33-333333333333,true
+eeeeeeee-eeee-4e55-8e55-eeeeeeeeeeee,0005,Cold Chain,33333333-3333-4c33-8c33-333333333333,true
