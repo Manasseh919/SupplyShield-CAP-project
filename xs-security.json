@@ -1,5 +1,80 @@
 {
-  "scopes": [],
-  "attributes": [],
-  "role-templates": []
+  "xsappname": "supplyshield",
+  "tenant-mode": "dedicated",
+  "scopes": [
+    {
+      "name": "$XSAPPNAME.RiskViewer",
+      "description": "Read access to shortage management data"
+    },
+    {
+      "name": "$XSAPPNAME.InventoryPlanner",
+      "description": "Inventory planning operations"
+    },
+    {
+      "name": "$XSAPPNAME.ProcurementSpecialist",
+      "description": "Procurement specialist access"
+    },
+    {
+      "name": "$XSAPPNAME.QualityApprover",
+      "description": "Quality approval access"
+    },
+    {
+      "name": "$XSAPPNAME.EngineeringApprover",
+      "description": "Engineering approval access"
+    },
+    {
+      "name": "$XSAPPNAME.FinanceApprover",
+      "description": "Finance approval access"
+    },
+    {
+      "name": "$XSAPPNAME.SupplyChainManager",
+      "description": "Supply chain management access"
+    },
+    {
+      "name": "$XSAPPNAME.Administrator",
+      "description": "Administrative access"
+    }
+  ],
+  "role-templates": [
+    {
+      "name": "RiskViewer",
+      "description": "Read access to SupplyShield data",
+      "scope-references": ["$XSAPPNAME.RiskViewer"]
+    },
+    {
+      "name": "InventoryPlanner",
+      "description": "Inventory planning operations",
+      "scope-references": ["$XSAPPNAME.InventoryPlanner"]
+    },
+    {
+      "name": "ProcurementSpecialist",
+      "description": "Procurement specialist access",
+      "scope-references": ["$XSAPPNAME.ProcurementSpecialist"]
+    },
+    {
+      "name": "QualityApprover",
+      "description": "Quality approval access",
+      "scope-references": ["$XSAPPNAME.QualityApprover"]
+    },
+    {
+      "name": "EngineeringApprover",
+      "description": "Engineering approval access",
+      "scope-references": ["$XSAPPNAME.EngineeringApprover"]
+    },
+    {
+      "name": "FinanceApprover",
+      "description": "Finance approval access",
+      "scope-references": ["$XSAPPNAME.FinanceApprover"]
+    },
+    {
+      "name": "SupplyChainManager",
+      "description": "Supply chain management access",
+      "scope-references": ["$XSAPPNAME.SupplyChainManager"]
+    },
+    {
+      "name": "Administrator",
+      "description": "Administrative access",
+      "scope-references": ["$XSAPPNAME.Administrator"]
+    }
+  ]
 }
